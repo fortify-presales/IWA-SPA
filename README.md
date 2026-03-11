@@ -80,8 +80,8 @@ docker/         Dockerfile + dev compose
 
 ## Security Testing Scenarios
 
-- **SAST**: CodeQL workflow included (`.github/workflows/security.yml`)
-- **DAST**: Point ZAP or Burp at `http://localhost:4000`
+- **SAST**: A number of workflows are provided, e.g. (`.github/workflows/codeql.yml`)
+- **DAST**: Point DAST Scanner at `http://localhost:5173`
 - **Manual**: Walk through purchase, admin, and upload flows
 
 ## License
