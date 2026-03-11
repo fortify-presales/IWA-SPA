@@ -1,0 +1,36 @@
+name: "\U0001F41E Bug Report"
+description: Report an unintentional bug (not a deliberate vulnerability)
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Bug Report
+        Use this template for **unintentional** bugs only.
+        If you have found a deliberate vulnerability that is not working as expected, use the Vulnerability Sink template.
+
+  - type: input
+    id: title
+    attributes:
+      label: What happened?
+      description: A clear description of the bug
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: "OS, Node version, browser, etc."

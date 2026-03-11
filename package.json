@@ -1,0 +1,21 @@
+{
+  "name": "iwa-spa",
+  "version": "1.0.0",
+  "description": "Insecure Web Application (SPA) – Online Pharmacy for DevSecOps training",
+  "private": true,
+  "workspaces": [
+    "apps/frontend",
+    "apps/backend",
+    "packages/shared"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=apps/backend\" \"npm run dev --workspace=apps/frontend\"",
+    "build": "npm run build --workspace=apps/frontend && npm run build --workspace=apps/backend",
+    "start": "npm run start --workspace=apps/backend",
+    "db:init": "npm run db:init --workspace=apps/backend",
+    "install:all": "npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
