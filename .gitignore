@@ -137,3 +137,16 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# IWA-SPA specific
+apps/backend/database/*.db
+apps/backend/database/*.db-shm
+apps/backend/database/*.db-wal
+apps/backend/build/
+apps/backend/dist/
+apps/backend/public/uploads/
+apps/frontend/dist/
+
+# Fortify
+.fortify
+*.fpr

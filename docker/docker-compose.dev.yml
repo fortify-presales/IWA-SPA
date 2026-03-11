@@ -1,0 +1,40 @@
+version: '3.8'
+# INTENTIONAL: dev compose – no security hardening, mounts source directly
+
+services:
+  api:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ../apps/backend:/app/apps/backend
+      - ../packages/shared:/app/packages/shared
+      - ../package.json:/app/package.json
+    ports:
+      - '4000:4000'
+    environment:
+      PORT: 4000
+      NODE_ENV: development
+      # INTENTIONAL: hard-coded JWT secret in compose file
+      JWT_SECRET: insecure-jwt-secret-do-not-use-in-production
+      DB_PATH: /app/apps/backend/database/pharmacy.db
+    command: >
+      sh -c "npm install --workspace=apps/backend --workspace=packages/shared &&
+             npm run db:init --workspace=apps/backend &&
+             npm run dev --workspace=apps/backend"
+
+  web:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ../apps/frontend:/app/apps/frontend
+      - ../packages/shared:/app/packages/shared
+      - ../package.json:/app/package.json
+    ports:
+      - '5173:5173'
+    environment:
+      VITE_API_URL: http://api:4000
+    depends_on:
+      - api
+    command: >
+      sh -c "npm install --workspace=apps/frontend --workspace=packages/shared &&
+             npm run dev --workspace=apps/frontend -- --host"

@@ -1,0 +1,253 @@
+
+# Create GitHub Action Repository Variables for your version of the application:
+#   FOD_URL                     - FoD Portal URL for your tenant (e.g. https://ams.fortify.com)
+#   FOD_API_URL                 - FoD API URL for your tenant (e.g. https://api.ams,fortify.com)
+#   FOD_APP_NAME_POSTFIX        - A postfix string to apply to the application to make it unique, set to empty to use DEFAULT_APP_NAME
+#   FOD_DEFAULT_OWNER           - The user id of the Application Owner (only needed if an application does not already exist)
+#   FOD_DEFAULT_ASSESSMENT_TYPE - The default Assessment Type to use, e.g. "Static Assessment"
+# Create GitHub Action Secrets for your version of the application:
+#   FOD_CLIENT_ID should be an API Key obtained from your FoD tenant.
+#   FOD_CLIENT_SECRET should be the secret for the API Key obtained for your FoD tenant.
+# Helpful hints:
+#   API Key credentials can be obtained from your FoD tenant, under Administration -> Settings -> API
+#   It is recommended to create credentials with 'Security Lead' Role selected.
+#   "Automated Audit preference" should be configured for the release's Static Scan Settings.
+name: OpenText Core Application Security Scan
+
+# Set the permissions for the GITHUB_TOKEN to allow the workflow to read repository contents, write security events, and write pull request comments. This is necessary for the workflow to function properly, as it needs to access the codebase for scanning, report security findings, and comment on pull requests with the results.
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+on:
+  # Triggers the workflow on push or pull request events but only for the main or develop branches
+  push:
+    paths-ignore:
+      - '.github/**/**'
+      - 'bin/**'
+      - 'data/**'
+      - 'etc/**'
+      - 'tests/**'
+      - '*.md'
+      - 'LICENSE'
+    branches:
+      - main
+      - develop
+      - feature/**    # runs on any branch named feature/...
+      - bugfix/**     # runs on any branch named bugfix/...
+  pull_request:
+    branches:
+      - main
+      - develop
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      runFoDSASTScan:
+        description: 'Carry out SAST scan using Fortify on Demand'
+        required: false
+        default: 'true'
+      runFoDDASTScan:
+        description: 'Carry out DAST scan using Fortify on Demand'
+        required: false
+        default: 'true'
+
+# Global environment variables
+env:
+  DEFAULT_APP_NAME: "IWA-SPA"
+  DEFAULT_PARENT_RELEASE_NAME: "main"
+  BASE_DIR: "."
+
+jobs:
+
+  #
+  # The Prepare job is responsible for setting up the environment variables that will be used in the subsequent jobs.
+  # It checks whether the workflow is running in the context of a pull request or a branch push and sets the FOD_RELEASE
+  # and FOD_PARENT_RELEASE variables accordingly. For pull requests, it constructs the release name to indicate that
+  # it's a merge to the base branch, while for branch pushes, it uses the branch name directly. This setup allows the
+  # SAST and DAST scan jobs to reference the correct release information when they run.
+  #
+  Prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      FOD_RELEASE: ${{ steps.commands.outputs.FOD_RELEASE }}
+      FOD_PARENT_RELEASE: ${{ steps.commands.outputs.FOD_PARENT_RELEASE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up environment variables
+        id: commands
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "Running in a pull request pipeline ..."
+            echo "FOD_RELEASE=${{ env.DEFAULT_APP_NAME }}${{ vars.FOD_APP_NAME_POSTFIX }}:merge-to-${{ github.base_ref }}#PR${{ github.event.number }}" >> $GITHUB_OUTPUT
+            echo "FOD_PARENT_RELEASE=${{ env.DEFAULT_APP_NAME }}${{ vars.FOD_APP_NAME_POSTFIX }}:${{ github.head_ref }}" >> $GITHUB_OUTPUT
+          else
+            echo "Running in a branch pipeline ..."
+            echo "FOD_RELEASE=${{ env.DEFAULT_APP_NAME }}${{ vars.FOD_APP_NAME_POSTFIX }}:${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "FOD_PARENT_RELEASE=${{ env.DEFAULT_APP_NAME }}${{ vars.FOD_APP_NAME_POSTFIX }}:${{ env.DEFAULT_PARENT_RELEASE_NAME }}" >> $GITHUB_OUTPUT
+          fi 
+
+  #
+  # The FoD-SAST-Scan job is designed to run for push and pull request events, as well as when manually triggered via
+  # workflow_dispatch with the runFoDSASTScan input set to true. This allows for flexibility in when SAST scans are
+  # executed, ensuring that they can be run automatically on relevant events while also giving users the option to
+  # trigger them manually when needed. The job will use the Fortify GitHub Action to perform a SAST scan on the
+  # codebase, and it will be configured to wait for the scan to complete before proceeding to the next steps in the
+  # workflow.
+  #
+  FoD-SAST-Scan:
+    runs-on: ubuntu-latest
+    if: ${{ (github.event_name == 'push') || (github.event_name == 'pull_request') || (github.event.inputs.runFoDSASTScan == 'true') }}
+    needs: [ Prepare ]
+    env: 
+      FOD_RELEASE: ${{ needs.Prepare.outputs.FOD_RELEASE }}
+      FOD_PARENT_RELEASE: ${{ needs.Prepare.outputs.FOD_PARENT_RELEASE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm install
+      - name: Build
+        run: npm run build || true
+      #
+      # See: https://fortify.github.io/fcli/v3/ci/github/v3.0.x/ast-action-fod.html
+      #
+      - name: Run FoD SAST and SCA Scan
+        timeout-minutes: 360
+        uses: fortify/github-action@v3
+        env:
+          FOD_URL: ${{ vars.FOD_URL }}
+          FOD_CLIENT_ID: ${{secrets.FOD_CLIENT_ID}}
+          FOD_CLIENT_SECRET: ${{secrets.FOD_CLIENT_SECRET}}
+          #FOD_RELEASE: ${{ format('{0}{1}:{2}', env.DEFAULT_APP_NAME, vars.FORTIFY_APP_NAME_POSTFIX, github.ref_name) }}
+          SETUP_EXTRA_OPTS: ${{ format('--sdlc-status Development --app-owner {1}', vars.FOD_DEFAULT_OWNER) }}
+          PACKAGE_EXTRA_OPTS: -bt none
+          COPY_FROM_RELEASE: ${{ env.FOD_PARENT_RELEASE }}
+          SAST_ASSESSMENT_TYPE: ${{ vars.FOD_DEFAULT_ASSESSMENT_TYPE }}
+          DO_SETUP: true
+          DO_SAST_SCAN: true
+          DO_AVIATOR_AUDIT: true
+          DO_SCA_SCAN: true
+          DO_WAIT: true
+          SAST_WAIT_EXTRA_OPTS: --timeout 2h
+          DO_POLICY_CHECK: false  # we will do policy check in a separate job after DAST scan
+          DO_JOB_SUMMARY: true
+          DO_PR_COMMENT: true
+          DO_EXPORT: true
+
+  #
+  # The FoD-DAST-Scan job is designed to run only for push events on the default branch (e.g. main) and only if the user
+  # has explicitly chosen to run it via the workflow_dispatch inputs. This is because DAST scans can be time-consuming
+  # and may not be necessary for every pull request or branch. By limiting it to the default branch, we ensure that we
+  # are only running DAST scans on code that is being merged into the main line of development. The job will use the
+  # Fortify CLI to start a DAST scan for the release that was prepared in the Prepare job, and it will wait for the
+  # scan to complete before proceeding.
+  #
+  FoD-DAST-Scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    if: ${{ (github.ref_name == github.event.repository.default_branch) && (github.event.inputs.runFoDDASTScan == 'true') }}
+    needs: [ Prepare, FoD-SAST-Scan ]
+    env: 
+      FOD_RELEASE: ${{ needs.Prepare.outputs.FOD_RELEASE }}
+      FOD_PARENT_RELEASE: ${{ needs.Prepare.outputs.FOD_PARENT_RELEASE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Fortify tools
+        uses: fortify/github-action/setup@v3
+        with:
+          export-path: true
+          fcli: latest
+      - name: Run FoD DAST Scan
+        shell: bash
+        run: |
+          fcli fod session login --url $FOD_API_URI --client-id $FOD_CLIENT_ID --client-secret $FOD_CLIENT_SECRET --fod-session github-actions
+          fcli fod dast-scan start --release "${FOD_RELEASE}" --store curScan --fod-session github-actions
+          sleep 10
+          fcli fod dast-scan wait-for ::curScan:: --fod-session github-actions
+          fcli fod session logout --fod-session github-actions
+        env:
+          FOD_API_URI: ${{ vars.FOD_API_URL }}
+          FOD_CLIENT_ID: ${{ secrets.FOD_CLIENT_ID }}
+          FOD_CLIENT_SECRET: ${{ secrets.FOD_CLIENT_SECRET }}
+          FOD_RELEASE: ${{ env.FOD_RELEASE }}
+
+  #
+  # The Verify-Security-Policy job is designed to run after the SAST and DAST scans have completed. It will wait for the
+  # DAST scan to finish if it was triggered, and then it will run the Fortify policy check action. The policy check will
+  # evaluate the results of both the SAST and DAST scans against the defined security policies in Fortify on Demand.
+  # The continue-on-error: true setting allows the workflow to proceed even if the policy check fails, which can be
+  # useful for reporting purposes without blocking the entire workflow.
+  #
+  Verify-Security-Policy:
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    needs: [ Prepare, FoD-SAST-Scan ]
+    env:
+      FOD_RELEASE: ${{ needs.Prepare.outputs.FOD_RELEASE }}
+      FOD_PARENT_RELEASE: ${{ needs.Prepare.outputs.FOD_PARENT_RELEASE }}
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Wait for FoD-DAST-Scan to finish (if it started)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # This script polls the GitHub Actions API to check for the status of the FoD-DAST-Scan job in the current workflow run.
+          # It waits until the job is no longer in progress before allowing the workflow to continue to the policy check step. 
+          # This ensures that the policy check evaluates the results of the DAST scan if it was triggered.
+          set -euo pipefail
+          API="https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs"
+          echo "Looking for job named 'FoD-DAST-Scan' in this workflow run..."
+          # install jq if missing
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -y && sudo apt-get install -y jq
+          fi
+          # poll for the job status (max ~30 minutes)
+          max_attempts=180
+          attempt=0
+          while [ $attempt -lt $max_attempts ]; do
+            attempt=$((attempt+1))
+            job_json=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" "$API")
+            job_exists=$(echo "$job_json" | jq '.jobs[]? | select(.name=="FoD-DAST-Scan")' || true)
+            if [ -z "$job_exists" ] || [ "$job_exists" = "null" ]; then
+              echo "No FoD-DAST-Scan job found for this run. Proceeding."
+              break
+            fi
+            status=$(echo "$job_json" | jq -r '.jobs[] | select(.name=="FoD-DAST-Scan") | .status')
+            conclusion=$(echo "$job_json" | jq -r '.jobs[] | select(.name=="FoD-DAST-Scan") | .conclusion')
+            echo "FoD-DAST-Scan status: $status, conclusion: $conclusion"
+            if [ "$status" = "completed" ]; then
+              echo "FoD-DAST-Scan completed (conclusion: $conclusion). Continuing."
+              break
+            fi
+            echo "Waiting for FoD-DAST-Scan to finish... (attempt $attempt)"
+            sleep 10
+          done
+          if [ $attempt -ge $max_attempts ]; then
+            echo "Timed out waiting for FoD-DAST-Scan; continuing anyway."
+          fi
+      - name: Run Check Policy Action
+        continue-on-error: true # only for reporting, do not fail the job if policy check fails
+        uses: fortify/github-action@v3
+        env:
+          FOD_URL: ${{ vars.FOD_URL }}
+          FOD_CLIENT_ID: ${{secrets.FOD_CLIENT_ID}}
+          FOD_CLIENT_SECRET: ${{secrets.FOD_CLIENT_SECRET}}
+          DO_SETUP: false
+          DO_SAST_SCAN: false
+          DO_SCA_SCAN: false
+          DO_AVIATOR_AUDIT: false
+          DO_WAIT: true
+          DO_POLICY_CHECK: true
+          DO_JOB_SUMMARY: false
+          DO_PR_COMMENT: true
+          DO_EXPORT: true
