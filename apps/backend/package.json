@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc",
+    "build": "tsc && node ./scripts/copy-sql.js",
     "start": "node dist/index.js",
     "db:init": "ts-node src/db/init.ts"
   },

@@ -36,8 +36,8 @@ RUN npm install --workspace=apps/backend --workspace=packages/shared --omit=dev
 
 COPY --from=backend-builder /app/apps/backend/dist ./apps/backend/dist
 COPY --from=backend-builder /app/apps/backend/build ./apps/backend/build
-COPY apps/backend/src/db/schema.sql ./apps/backend/src/db/schema.sql
-COPY apps/backend/src/db/seed.sql ./apps/backend/src/db/seed.sql
+COPY apps/backend/src/db/schema.sql ./apps/backend/dist/db/schema.sql
+COPY apps/backend/src/db/seed.sql ./apps/backend/dist/db/seed.sql
 
 # INTENTIONAL: .env baked into image
 COPY .env.example .env

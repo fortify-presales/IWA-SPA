@@ -146,3 +146,7 @@ apps/backend/build/
 apps/backend/dist/
 apps/backend/public/uploads/
 apps/frontend/dist/
+
+# Fortify
+.fortify
+*.fpr

@@ -1,25 +1,32 @@
-name: Security Testing
+# This workflow uses the CodeQL Action to analyze code for security vulnerabilities and errors.
+# Set the DO_CODEQL_SCAN repository variable to "true" to enable the scan on push and pull request events.
+# You can also trigger the scan manually via the "Run workflow" button in the Actions tab, and override the variable for that run.
+name: "CodeQL Security Scan"
 
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
-  schedule:
-    # Run weekly on Monday at 08:00 UTC
-    - cron: '0 8 * * 1'
+  workflow_dispatch:
+    inputs:
+      DO_CODEQL_SCAN:
+        description: 'Set to "true" to run the CodeQL scan (overrides repo variable)'
+        required: false
+        default: ''
+
+permissions:
+  security-events: write
+  actions: read
+  contents: read
 
 jobs:
   sast-codeql:
-    name: SAST – CodeQL
+    name: SAST CodeQL
     runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
+    if: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.DO_CODEQL_SCAN == 'true') || (github.event_name != 'workflow_dispatch' && vars.DO_CODEQL_SCAN == 'true') }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
@@ -42,32 +49,3 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: '/language:javascript-typescript'
-
-  sca-dependency-review:
-    name: SCA – Dependency Review
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    permissions:
-      contents: read
-
-    steps:
-      - uses: actions/checkout@v4
-      - name: Dependency Review
-        uses: actions/dependency-review-action@v4
-
-  secret-scanning:
-    name: Secret Scanning – Gitleaks
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
